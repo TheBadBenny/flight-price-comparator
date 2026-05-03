@@ -22,6 +22,8 @@ from src.providers import (
     PriceProvider,
     SerpApiGoogleFlightsProvider,
     SkyscannerProvider,
+    SkyscannerScraperProvider,
+    TravelpayoutsProvider,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,8 +74,14 @@ def build_providers(app: AppConfig, selected: list[str] | None) -> list[PricePro
             providers.append(
                 SkyscannerProvider(app.rapidapi_key, host=app.skyscanner_host)  # type: ignore[arg-type]
             )
+        elif name == "skyscanner-scrape":
+            providers.append(
+                SkyscannerScraperProvider(headless=app.skyscanner_scraper_headless)
+            )
         elif name == "serpapi":
             providers.append(SerpApiGoogleFlightsProvider(app.serpapi_api_key))  # type: ignore[arg-type]
+        elif name == "travelpayouts":
+            providers.append(TravelpayoutsProvider(app.travelpayouts_token))  # type: ignore[arg-type]
     return providers
 
 
@@ -186,7 +194,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     converter = CurrencyConverter(app.exchangerate_api_key)
-    raw = collect_quotes(providers, search, converter, app)
+    try:
+        raw = collect_quotes(providers, search, converter, app)
+    finally:
+        for provider in providers:
+            try:
+                provider.close()
+            except Exception:
+                logger.exception("Error closing provider %s", provider.name)
     if not raw:
         logger.error("No quotes were collected — nothing to render.")
         return 1

@@ -4,17 +4,26 @@ Compare flight prices for the same itinerary across different **points of sale (
 i.e. simulate being a user in different countries to spot pricing arbitrage.
 
 > **Disclaimer.** This project is for **educational and research purposes** only. Always
-> respect the Terms of Service of the APIs you use. Many fares carry restrictions tied to
-> the country of purchase, the currency of the payment card, or the originating airport.
-> Just because a price is cheaper from a given PoS does **not** guarantee you will be able
-> to book and travel under that fare.
+> respect the Terms of Service of the APIs and websites you query.
+>
+> The bundled **Skyscanner browser scraper** in particular violates Skyscanner's ToS if
+> used at any meaningful volume or for commercial purposes. It exists so individual
+> researchers can compare prices across markets when partner-API access is unavailable;
+> please use it responsibly, throttle aggressively, and prefer the API providers
+> (Kiwi, Amadeus, Skyscanner-RapidAPI, SerpAPI, Travelpayouts) for anything beyond a
+> handful of one-off lookups.
+>
+> Many fares carry restrictions tied to the country of purchase, the currency of the
+> payment card, or the originating airport. Just because a price is cheaper from a given
+> PoS does **not** guarantee you will be able to book and travel under that fare.
 
 ## Features
 
 - **Multi-provider triangulation.** Query the same itinerary on **Kiwi Tequila**,
-  **Amadeus**, **Skyscanner (via RapidAPI)** and **SerpAPI Google Flights** in a single
-  run, then compare prices side-by-side per country to spot real PoS arbitrage vs.
-  noise from a single source.
+  **Amadeus**, **Skyscanner (RapidAPI)**, **Skyscanner (browser scraper)**,
+  **SerpAPI Google Flights** and **Travelpayouts/Aviasales** in a single run, then
+  compare prices side-by-side per country to spot real PoS arbitrage vs. noise from a
+  single source.
 - Modular `PriceProvider` abstraction — adding a provider is one class.
 - Per-country `market` / `partner_market` / `gl` / `currency` / `locale` overrides where
   the upstream API supports them. Providers honestly declare via
@@ -39,10 +48,12 @@ flight-price-comparator/
 │   ├── main.py                  # CLI entry point
 │   └── providers/
 │       ├── base.py              # PriceProvider / PriceQuote
-│       ├── kiwi.py              # Kiwi Tequila
-│       ├── amadeus.py           # Amadeus Self-Service
-│       ├── skyscanner.py        # Skyscanner via RapidAPI
-│       └── serpapi_flights.py   # SerpAPI Google Flights
+│       ├── kiwi.py                  # Kiwi Tequila
+│       ├── amadeus.py               # Amadeus Self-Service
+│       ├── skyscanner.py            # Skyscanner via RapidAPI
+│       ├── skyscanner_scraper.py    # Skyscanner via Playwright (browser)
+│       ├── serpapi_flights.py       # SerpAPI Google Flights
+│       └── travelpayouts.py         # Travelpayouts / Aviasales Data API
 ├── tests/                       # pytest unit tests
 ├── results/                     # generated CSV + PNG land here (gitignored)
 ├── .env.example
@@ -64,7 +75,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# edit .env and paste your Kiwi Tequila API key
+# edit .env and paste at least one provider's credentials
+```
+
+If you plan to use the Skyscanner browser scraper, also install the Chromium runtime:
+
+```bash
+playwright install chromium
 ```
 
 ## Usage
@@ -90,7 +107,8 @@ Limit to a subset with `--providers`:
 python -m src.main --providers kiwi skyscanner --origin MAD --destination JFK --depart-date 2026-08-15
 ```
 
-Valid provider keys: `kiwi`, `amadeus`, `skyscanner`, `serpapi`.
+Valid provider keys: `kiwi`, `amadeus`, `skyscanner`, `skyscanner-scrape`, `serpapi`,
+`travelpayouts`.
 
 YAML config (see `examples/search.yml` style):
 
@@ -114,12 +132,14 @@ Flags override YAML values when both are present. Add `--no-chart` to skip the P
 
 | API                                                          | Used for           | Free tier         | True PoS switching | How to get the key                                                                                              |
 | ------------------------------------------------------------ | ------------------ | ----------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| [Kiwi Tequila](https://tequila.kiwi.com/portal/sign-up)      | Flight search      | Yes (limited)     | ✅ (`partner_market`) | Portal → My account → API keys → set `KIWI_TEQUILA_API_KEY`                                                    |
-| [Amadeus Self-Service](https://developers.amadeus.com/register) | Flight search   | Yes (test env)    | ⚠️ currency only   | Register → "Self-Service" → create app → set `AMADEUS_API_KEY` and `AMADEUS_API_SECRET`                        |
-| [Skyscanner (RapidAPI)](https://rapidapi.com/search/skyscanner) | Flight search    | Depends on host   | ✅ (`market`)      | Subscribe to a Skyscanner endpoint on RapidAPI → set `RAPIDAPI_KEY` and `SKYSCANNER_RAPIDAPI_HOST` to that host |
-| [SerpAPI Google Flights](https://serpapi.com/users/sign_up)  | Flight search      | Yes (100/month)   | ✅ (`gl`+`currency`) | Sign up → dashboard → API key → set `SERPAPI_API_KEY`                                                          |
-| [Frankfurter](https://www.frankfurter.app)                   | FX rates (default) | Yes, no key       | n/a                | n/a                                                                                                              |
-| [exchangerate-api.com](https://www.exchangerate-api.com)     | FX rates (alt.)    | Yes (limited)     | n/a                | Sign up → free plan → set `EXCHANGERATE_API_KEY`                                                                 |
+| [Kiwi Tequila](https://tequila.kiwi.com/portal/sign-up)      | Flight search      | Yes (limited)     | ✅ (`partner_market`)   | Portal → My account → API keys → set `KIWI_TEQUILA_API_KEY`                                                     |
+| [Amadeus Self-Service](https://developers.amadeus.com/register) | Flight search   | Yes (test env)    | ⚠️ currency only       | Register → "Self-Service" → create app → set `AMADEUS_API_KEY` and `AMADEUS_API_SECRET`                         |
+| [Skyscanner (RapidAPI)](https://rapidapi.com/search/skyscanner) | Flight search    | Depends on host   | ✅ (`market`)           | Subscribe to a Skyscanner endpoint on RapidAPI → set `RAPIDAPI_KEY` and `SKYSCANNER_RAPIDAPI_HOST` to that host  |
+| **Skyscanner (browser scraper)**                             | Flight search      | n/a — direct site | ✅ (PoS subdomain)      | Set `SKYSCANNER_SCRAPER_ENABLED=true` and run `playwright install chromium`. **Educational use only.**          |
+| [SerpAPI Google Flights](https://serpapi.com/users/sign_up)  | Flight search      | Yes (100/month)   | ✅ (`gl`+`currency`)    | Sign up → dashboard → API key → set `SERPAPI_API_KEY`                                                            |
+| [Travelpayouts (Aviasales)](https://www.travelpayouts.com)   | Flight search      | Yes (free tier)   | ⚠️ currency only       | Sign up as affiliate → developer dashboard → set `TRAVELPAYOUTS_TOKEN`                                          |
+| [Frankfurter](https://www.frankfurter.app)                   | FX rates (default) | Yes, no key       | n/a                    | n/a                                                                                                              |
+| [exchangerate-api.com](https://www.exchangerate-api.com)     | FX rates (alt.)    | Yes (limited)     | n/a                    | Sign up → free plan → set `EXCHANGERATE_API_KEY`                                                                 |
 
 ### Notes per provider
 
@@ -136,6 +156,20 @@ Flags override YAML values when both are present. Add `--no-chart` to skip the P
   and `locale`, so this is a strong PoS source.
 - **SerpAPI Google Flights**: scrapes Google Flights and exposes `gl` (country) and
   `currency`. Reflects what a Google user in that country sees.
+- **Skyscanner (browser scraper)**: drives a real Chromium via Playwright against the
+  country-specific Skyscanner domain (e.g. `skyscanner.es`, `skyscanner.co.in`). This
+  gives you the truest PoS comparison available without a partner agreement, **but**:
+  - **Skyscanner's ToS prohibits automated access** — this provider is for personal /
+    educational research only, never commercial scraping.
+  - There is **no anti-bot evasion** (no proxy rotation, no fingerprint spoofing). If
+    Skyscanner starts returning challenges in your region, the provider will simply
+    return no quote rather than try to bypass them.
+  - Skyscanner's DOM changes regularly; the parser uses a currency-aware regex over
+    page text instead of brittle CSS selectors, but expect to update it occasionally.
+  - It's **slow**: ~10-15 seconds per country including page render. Increase
+    `REQUEST_DELAY_SECONDS` if you start seeing throttling.
+- **Travelpayouts (Aviasales)**: stable Data API with currency switching but no real
+  PoS variation. Useful as a sanity check / fallback when the others throttle.
 
 ## Configuration reference (`.env`)
 
@@ -148,6 +182,9 @@ Flags override YAML values when both are present. Add `--no-chart` to skip the P
 | `RAPIDAPI_KEY`                 | _empty_                         | Enables the Skyscanner provider via RapidAPI.                              |
 | `SKYSCANNER_RAPIDAPI_HOST`     | `skyscanner80.p.rapidapi.com`   | The Skyscanner host on RapidAPI you've subscribed to.                      |
 | `SERPAPI_API_KEY`              | _empty_                         | Enables the SerpAPI Google Flights provider.                               |
+| `TRAVELPAYOUTS_TOKEN`          | _empty_                         | Enables the Travelpayouts/Aviasales provider.                              |
+| `SKYSCANNER_SCRAPER_ENABLED`   | `false`                         | Enables the Playwright-based Skyscanner scraper.                           |
+| `SKYSCANNER_SCRAPER_HEADLESS`  | `true`                          | Set to `false` to launch a visible browser (debugging).                    |
 | `EXCHANGERATE_API_KEY`         | _empty_                         | If set, FX uses exchangerate-api.com; otherwise Frankfurter.               |
 | `FX_COMMISSION`                | `0.015`                         | Multiplicative FX commission (1.5% by default).                            |
 | `REQUEST_DELAY_SECONDS`        | `1.0`                           | Sleep between provider calls (rate-limit friendliness).                    |

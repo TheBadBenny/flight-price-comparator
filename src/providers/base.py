@@ -51,3 +51,12 @@ class PriceProvider(ABC):
             A :class:`PriceQuote` or ``None`` if no flights were found.
         """
         raise NotImplementedError
+
+    def close(self) -> None:
+        """Release any resources held by the provider (e.g. browser, sockets).
+
+        Default implementation is a no-op. Providers that hold heavyweight state
+        (like a Playwright browser) should override this and the orchestrator
+        will call it once after all queries are done.
+        """
+        return None

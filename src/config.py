@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_COUNTRIES = ["ES", "IN", "TH", "PL", "MX", "US", "TR", "BR"]
 VALID_CABIN_CLASSES = ("economy", "premium", "business")
-SUPPORTED_PROVIDERS = ("kiwi", "amadeus", "skyscanner", "serpapi")
+SUPPORTED_PROVIDERS = (
+    "kiwi",
+    "amadeus",
+    "skyscanner",
+    "skyscanner-scrape",
+    "serpapi",
+    "travelpayouts",
+)
 
 
 @dataclass
@@ -71,6 +78,9 @@ class AppConfig:
     rapidapi_key: str | None
     skyscanner_host: str
     serpapi_api_key: str | None
+    travelpayouts_token: str | None
+    enable_skyscanner_scraper: bool
+    skyscanner_scraper_headless: bool
     exchangerate_api_key: str | None
     fx_commission: float
     request_delay_seconds: float
@@ -84,8 +94,12 @@ class AppConfig:
             out.append("amadeus")
         if self.rapidapi_key:
             out.append("skyscanner")
+        if self.enable_skyscanner_scraper:
+            out.append("skyscanner-scrape")
         if self.serpapi_api_key:
             out.append("serpapi")
+        if self.travelpayouts_token:
+            out.append("travelpayouts")
         return out
 
 
@@ -112,6 +126,11 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
         rapidapi_key=os.getenv("RAPIDAPI_KEY") or None,
         skyscanner_host=os.getenv("SKYSCANNER_RAPIDAPI_HOST", "skyscanner80.p.rapidapi.com"),
         serpapi_api_key=os.getenv("SERPAPI_API_KEY") or None,
+        travelpayouts_token=os.getenv("TRAVELPAYOUTS_TOKEN") or None,
+        enable_skyscanner_scraper=os.getenv("SKYSCANNER_SCRAPER_ENABLED", "").lower()
+        in ("1", "true", "yes"),
+        skyscanner_scraper_headless=os.getenv("SKYSCANNER_SCRAPER_HEADLESS", "true").lower()
+        in ("1", "true", "yes"),
         exchangerate_api_key=os.getenv("EXCHANGERATE_API_KEY") or None,
         fx_commission=float(os.getenv("FX_COMMISSION", "0.015")),
         request_delay_seconds=float(os.getenv("REQUEST_DELAY_SECONDS", "1.0")),
