@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_COUNTRIES = ["ES", "IN", "TH", "PL", "MX", "US", "TR", "BR"]
 VALID_CABIN_CLASSES = ("economy", "premium", "business")
+SUPPORTED_PROVIDERS = ("kiwi", "amadeus", "skyscanner", "serpapi")
 
 
 @dataclass
@@ -64,9 +65,28 @@ class AppConfig:
     """
 
     kiwi_api_key: str | None
+    amadeus_api_key: str | None
+    amadeus_api_secret: str | None
+    amadeus_use_production: bool
+    rapidapi_key: str | None
+    skyscanner_host: str
+    serpapi_api_key: str | None
     exchangerate_api_key: str | None
     fx_commission: float
     request_delay_seconds: float
+
+    def available_providers(self) -> list[str]:
+        """Return provider names whose required credentials are present."""
+        out: list[str] = []
+        if self.kiwi_api_key:
+            out.append("kiwi")
+        if self.amadeus_api_key and self.amadeus_api_secret:
+            out.append("amadeus")
+        if self.rapidapi_key:
+            out.append("skyscanner")
+        if self.serpapi_api_key:
+            out.append("serpapi")
+        return out
 
 
 def load_app_config(env_path: Path | None = None) -> AppConfig:
@@ -85,6 +105,13 @@ def load_app_config(env_path: Path | None = None) -> AppConfig:
 
     return AppConfig(
         kiwi_api_key=os.getenv("KIWI_TEQUILA_API_KEY") or None,
+        amadeus_api_key=os.getenv("AMADEUS_API_KEY") or None,
+        amadeus_api_secret=os.getenv("AMADEUS_API_SECRET") or None,
+        amadeus_use_production=os.getenv("AMADEUS_USE_PRODUCTION", "").lower()
+        in ("1", "true", "yes"),
+        rapidapi_key=os.getenv("RAPIDAPI_KEY") or None,
+        skyscanner_host=os.getenv("SKYSCANNER_RAPIDAPI_HOST", "skyscanner80.p.rapidapi.com"),
+        serpapi_api_key=os.getenv("SERPAPI_API_KEY") or None,
         exchangerate_api_key=os.getenv("EXCHANGERATE_API_KEY") or None,
         fx_commission=float(os.getenv("FX_COMMISSION", "0.015")),
         request_delay_seconds=float(os.getenv("REQUEST_DELAY_SECONDS", "1.0")),
@@ -142,6 +169,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=None,
         help="ISO country codes to compare (e.g. ES IN TH).",
+    )
+    parser.add_argument(
+        "--providers",
+        type=str,
+        nargs="+",
+        default=None,
+        choices=list(SUPPORTED_PROVIDERS),
+        help="Providers to query. Defaults to every provider whose credentials are present.",
     )
     parser.add_argument(
         "--no-chart",

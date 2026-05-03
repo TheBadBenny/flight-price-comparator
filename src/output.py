@@ -19,6 +19,7 @@ class ComparisonRow:
     """A single row in the comparison table.
 
     Attributes:
+        provider: Source provider name (e.g. "kiwi-tequila").
         country: ISO-3166 alpha-2 country code (PoS).
         currency: ISO-4217 currency code.
         price_local: Price in local currency.
@@ -28,6 +29,7 @@ class ComparisonRow:
         deep_link: Booking deep link (or empty string).
     """
 
+    provider: str
     country: str
     currency: str
     price_local: float
@@ -46,6 +48,7 @@ def render_table(rows: list[ComparisonRow], console: Console | None = None) -> N
     """
     console = console or Console()
     table = Table(title="Flight price comparison by point-of-sale country")
+    table.add_column("Provider", style="green", no_wrap=True)
     table.add_column("Country", style="cyan", no_wrap=True)
     table.add_column("Currency", style="magenta")
     table.add_column("Price (local)", justify="right")
@@ -56,6 +59,7 @@ def render_table(rows: list[ComparisonRow], console: Console | None = None) -> N
     for i, row in enumerate(rows):
         diff = "—" if i == 0 else f"+{row.diff_pct_vs_cheapest:.2f}%"
         table.add_row(
+            row.provider,
             row.country,
             row.currency,
             f"{row.price_local:,.2f}",
@@ -83,6 +87,7 @@ def export_csv(rows: list[ComparisonRow], results_dir: Path) -> Path:
         writer = csv.writer(fh)
         writer.writerow(
             [
+                "provider",
                 "country",
                 "currency",
                 "price_local",
@@ -95,6 +100,7 @@ def export_csv(rows: list[ComparisonRow], results_dir: Path) -> Path:
         for row in rows:
             writer.writerow(
                 [
+                    row.provider,
                     row.country,
                     row.currency,
                     f"{row.price_local:.2f}",
@@ -131,14 +137,14 @@ def export_chart(rows: list[ComparisonRow], results_dir: Path) -> Path | None:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = results_dir / f"comparison_{ts}.png"
 
-    countries = [r.country for r in rows]
+    labels = [f"{r.provider}/{r.country}" for r in rows]
     prices = [r.price_eur_with_fee for r in rows]
 
-    fig, ax = plt.subplots(figsize=(8, max(3, 0.5 * len(rows) + 1)))
-    ax.barh(countries, prices)
+    fig, ax = plt.subplots(figsize=(8, max(3, 0.4 * len(rows) + 1)))
+    ax.barh(labels, prices)
     ax.invert_yaxis()
     ax.set_xlabel("Price (EUR, FX fee included)")
-    ax.set_title("Flight price by point-of-sale country")
+    ax.set_title("Flight price by provider × point-of-sale country")
     for i, p in enumerate(prices):
         ax.text(p, i, f" {p:,.0f}", va="center")
     fig.tight_layout()
@@ -148,25 +154,36 @@ def export_chart(rows: list[ComparisonRow], results_dir: Path) -> Path | None:
     return out
 
 
-def build_rows(quotes_eur: list[tuple[str, str, float, float, float, str]]) -> list[ComparisonRow]:
+def build_rows(
+    quotes_eur: list[tuple[str, str, str, float, float, float, str]],
+) -> list[ComparisonRow]:
     """Build sorted :class:`ComparisonRow` instances from raw tuples.
 
     Args:
         quotes_eur: Tuples of
-            ``(country, currency, price_local, price_eur, price_eur_with_fee, deep_link)``.
+            ``(provider, country, currency, price_local, price_eur, price_eur_with_fee, deep_link)``.
 
     Returns:
         Rows sorted ascending by EUR-with-fee, with ``diff_pct_vs_cheapest`` filled in.
     """
     if not quotes_eur:
         return []
-    sorted_q = sorted(quotes_eur, key=lambda x: x[4])
-    cheapest = sorted_q[0][4]
+    sorted_q = sorted(quotes_eur, key=lambda x: x[5])
+    cheapest = sorted_q[0][5]
     rows: list[ComparisonRow] = []
-    for country, currency, price_local, price_eur, price_eur_with_fee, deep_link in sorted_q:
+    for (
+        provider,
+        country,
+        currency,
+        price_local,
+        price_eur,
+        price_eur_with_fee,
+        deep_link,
+    ) in sorted_q:
         diff = 0.0 if cheapest == 0 else (price_eur_with_fee - cheapest) / cheapest * 100.0
         rows.append(
             ComparisonRow(
+                provider=provider,
                 country=country,
                 currency=currency,
                 price_local=price_local,
